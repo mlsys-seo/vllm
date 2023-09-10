@@ -1,0 +1,6 @@
+INFO 09-08 07:22:50 llm_engine.py:72] Initializing an LLM engine with config: model='facebook/opt-13b', tokenizer='facebook/opt-13b', tokenizer_mode=auto, trust_remote_code=False, dtype=torch.float16, download_dir=None, load_format=auto, tensor_parallel_size=1, seed=0)
+INFO 09-08 07:23:20 llm_engine.py:199] # GPU blocks: 318, # CPU blocks: 327
+Prompt: 'Hello, my name is', Generated text: " Joel. I'm from Massachusetts. I'm 21 years old and I'm a"
+Prompt: 'The president of the United States is', Generated text: ' simultaneously the most popular and least popular politician in the country. And we all have'
+Prompt: 'The capital of France is', Generated text: ' Paris.\nThe capital of England is London.'
+Prompt: 'The future of AI is', Generated text: ' human-like \nThis is the same premise as the movie "I,'
