@@ -457,6 +457,8 @@ class LLMEngine:
             eos_token_id=self.tokenizer.eos_token_id),
                                 reverse=True)
 
+        print(f"length of running_child_seqs: {len(running_child_seqs)}")
+
         # Check if we can stop the beam search.
         if len(running_child_seqs) == 0:
             # No running sequences, stop the beam search.
