@@ -291,7 +291,6 @@ class Worker:
         input_tokens, input_positions, input_metadata = self._prepare_inputs(
             seq_group_metadata_list)
 
-        import pdb; pdb.set_trace()
         # Execute the model.
         output = self.model(
             input_ids=input_tokens,
@@ -309,9 +308,7 @@ class Worker:
                 # start
                 cpu_block_tables = input_metadata.block_tables.cpu().numpy()[0]
                 target_idx = cpu_block_tables[len(input_metadata.quantized)]
-                # print(f"target_idx: {target_idx}")
 
-                # TODO: k
                 kv = 1
                 for layer in range(len(self.gpu_cache)):
                     target_tensor = self.gpu_cache[layer][kv][target_idx]
@@ -330,20 +327,15 @@ class Worker:
                     quantized_tensor = target_tensor.clone().cpu().numpy()
                     quantized_tensor = (quantized_tensor / scale + zero_point).round().astype(np.int16)
                     
-                    # print(quantized_tensor)
-
-                    binary_representation = quantized_tensor[0][1][2]
-                    print(bin(binary_representation))
+                    if layer == 3:
+                        for i in range(0, len(quantized_tensor[1][2]) - 3, 2):
+                            shif_l = quantized_tensor[1][2][i] << 4
+                            print(shif_l)
+                            j = i+1
+                            print(bin(i+j))
+                    
                     # cpoy to gpu_cache
                     
-                    # qu end
-                    
-                    # bit push
-                    # pass
-                
-                    #######
-                    input_metadata.quantized.append(1)
-                    # 이 걸 어ㄸ 게 해겨 하지? 
         
         return output
 
