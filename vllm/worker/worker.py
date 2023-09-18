@@ -15,6 +15,8 @@ from vllm.sequence import SamplerOutput, SequenceData, SequenceGroupMetadata
 from vllm.worker.cache_engine import CacheEngine
 from vllm.utils import get_gpu_memory
 
+import numpy as np
+
 
 class Worker:
     """A worker class that executes (a partition of) the model on a GPU.
@@ -289,6 +291,7 @@ class Worker:
         input_tokens, input_positions, input_metadata = self._prepare_inputs(
             seq_group_metadata_list)
 
+        import pdb; pdb.set_trace()
         # Execute the model.
         output = self.model(
             input_ids=input_tokens,
@@ -299,19 +302,19 @@ class Worker:
         )
 
         if len(input_metadata.block_tables) > 0:
-            # 첫 째 dim  이 prom
+            # 첫 째 dim이 prompt
             if len(input_metadata.block_tables[0]) - len(input_metadata.quantized) \
                 == 2:
+                
                 # start
                 cpu_block_tables = input_metadata.block_tables.cpu().numpy()[0]
                 target_idx = cpu_block_tables[len(input_metadata.quantized)]
-                print(f"target_idx: {target_idx}")
+                # print(f"target_idx: {target_idx}")
 
+                # TODO: k
                 kv = 1
-                # for layer in [0]:
                 for layer in range(len(self.gpu_cache)):
                     target_tensor = self.gpu_cache[layer][kv][target_idx]
-                    # print(target_tensor[0][0]) = 16len
                     # num_headas, num_elements, num_tokens_in_block
                     
                     TARGET_BIT = 4
@@ -321,14 +324,18 @@ class Worker:
                     scale = torch.clamp(scale, min=1e-8) / n
                     zero_point = torch.tensor(0.0).to(scale.device)
                     
-                    print("layer:", layer)
-                    print("scale:", scale)
-                    quantized_tensor = target_tensor.mul_(1.0 /scale).add_(zero_point).round_()
+                    scale = scale.cpu().numpy()
+                    zero_point = zero_point.cpu().numpy()
+
+                    quantized_tensor = target_tensor.clone().cpu().numpy()
+                    quantized_tensor = (quantized_tensor / scale + zero_point).round().astype(np.int16)
                     
-                    import struct
-                    binary_representation = struct.unpack('!H', struct.pack('!e', quantized_tensor[0][1][2]))[0]
-                    binary_string = format(binary_representation, '16b')
-                    print(binary_string)
+                    # print(quantized_tensor)
+
+                    binary_representation = quantized_tensor[0][1][2]
+                    print(bin(binary_representation))
+                    # cpoy to gpu_cache
+                    
                     # qu end
                     
                     # bit push
