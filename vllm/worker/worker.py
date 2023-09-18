@@ -331,9 +331,9 @@ class Worker:
                         for i in range(0, len(quantized_tensor[1][2]) - 3, 2):
                             shif_l = quantized_tensor[1][2][i] << 4
                             print(shif_l)
-                            j = i+1
-                            print(bin(i+j))
-                    
+                            j = +1
+                            print(bin(shif_l + quantized_tensor[1][2][j]))
+
                     # cpoy to gpu_cache
                     
         
