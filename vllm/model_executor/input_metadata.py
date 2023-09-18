@@ -18,6 +18,7 @@ class InputMetadata:
         context_lens: the length of attention context for each generation token.
         max_context_len: The maximum context length.
         block_tables: The block tables. (Seq id -> list of physical block)
+        qunstized:
     """
 
     def __init__(
@@ -37,6 +38,7 @@ class InputMetadata:
         self.context_lens = context_lens
         self.max_context_len = max_context_len
         self.block_tables = block_tables
+        self.quantized = []
 
         self.num_prompts = len(prompt_lens)
         self.num_prompt_tokens = sum(prompt_lens)

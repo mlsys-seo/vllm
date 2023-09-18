@@ -297,6 +297,47 @@ class Worker:
             input_metadata=input_metadata,
             cache_events=cache_events,
         )
+
+        if len(input_metadata.block_tables) > 0:
+            # 첫 째 dim  이 prom
+            if len(input_metadata.block_tables[0]) - len(input_metadata.quantized) \
+                == 2:
+                # start
+                cpu_block_tables = input_metadata.block_tables.cpu().numpy()[0]
+                target_idx = cpu_block_tables[len(input_metadata.quantized)]
+                print(f"target_idx: {target_idx}")
+
+                kv = 1
+                # for layer in [0]:
+                for layer in range(len(self.gpu_cache)):
+                    target_tensor = self.gpu_cache[layer][kv][target_idx]
+                    # print(target_tensor[0][0]) = 16len
+                    # num_headas, num_elements, num_tokens_in_block
+                    
+                    TARGET_BIT = 4
+                    n = 2 ** (TARGET_BIT - 1)
+                    
+                    scale = max(target_tensor.max().abs(), target_tensor.min().abs())
+                    scale = torch.clamp(scale, min=1e-8) / n
+                    zero_point = torch.tensor(0.0).to(scale.device)
+                    
+                    print("layer:", layer)
+                    print("scale:", scale)
+                    quantized_tensor = target_tensor.mul_(1.0 /scale).add_(zero_point).round_()
+                    
+                    import struct
+                    binary_representation = struct.unpack('!H', struct.pack('!e', quantized_tensor[0][1][2]))[0]
+                    binary_string = format(binary_representation, '16b')
+                    print(binary_string)
+                    # qu end
+                    
+                    # bit push
+                    # pass
+                
+                    #######
+                    input_metadata.quantized.append(1)
+                    # 이 걸 어ㄸ 게 해겨 하지? 
+        
         return output
 
 
