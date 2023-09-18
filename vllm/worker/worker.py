@@ -327,12 +327,22 @@ class Worker:
                     quantized_tensor = target_tensor.clone().cpu().numpy()
                     quantized_tensor = (quantized_tensor / scale + zero_point).round().astype(np.int16)
                    
-                    quantized_tensor = (quantized_tensor << 12).view(dtype=np.float16)
+                    for head_idx in range(len(quantized_tensor)):
+                        for elem_idx in range(len(quantized_tensor[head_idx])):
+                            for i in range(0, len(quantized_tensor[head_idx][elem_idx]) - 1, 4): # 0 4 8 12
+                                bit_sum = 0
+                                for j in range(3):
+                                    bit_sum += quantized_tensor[head_idx][elem_idx][i+j] << 4 * (3-j)
+                                quantized_tensor[head_idx][elem_idx][i] = bit_sum
+                                    
+                            
 
                     # cpoy to gpu_cache
-                    quantized_tensor = torch.tensor(quantized_tensor).cuda()
-                    self.gpu_cache[layer][kv][target_idx] = quantized_tensor
-                    print(self.gpu_cache[layer][kv][target_idx][5][4])
+                    # quantized_tensor = torch.tensor(quantized_tensor).cuda()
+                    # self.gpu_cache[layer][kv][target_idx] = quantized_tensor
+                    # print(self.gpu_cache[layer][kv][target_idx][5][4])
+                    
+                    # copy to gpu_cache
                     
                     
                     # update scale list
