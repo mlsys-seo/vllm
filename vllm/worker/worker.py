@@ -326,15 +326,16 @@ class Worker:
 
                     quantized_tensor = target_tensor.clone().cpu().numpy()
                     quantized_tensor = (quantized_tensor / scale + zero_point).round().astype(np.int16)
-                    
-                    if layer == 3:
-                        for i in range(0, len(quantized_tensor[1][2]) - 3, 2):
-                            shif_l = quantized_tensor[1][2][i] << 4
-                            print(shif_l)
-                            j = i+1
-                            print(bin(shif_l + quantized_tensor[1][2][j]))
+                   
+                    quantized_tensor = (quantized_tensor << 12).view(dtype=np.float16)
 
                     # cpoy to gpu_cache
+                    quantized_tensor = torch.tensor(quantized_tensor).cuda()
+                    self.gpu_cache[layer][kv][target_idx] = quantized_tensor
+                    print(self.gpu_cache[layer][kv][target_idx][5][4])
+                    
+                    
+                    # update scale list
                     
         
         return output
