@@ -367,9 +367,16 @@ class Worker:
                         quantized_tensor[write_head_idx][write_elem_idx][write_token_idx] |= read
                        
                         read_idx += 1
-                    
+                    '''
                     if layer == 2:
                         print(f"after: {quantized_tensor[0][1]}")
+after: tensor([  256,  7936,   255,  4111,     0, -3600,     0, -4096,     0,  3840,
+           16,   225, -4096,  3584,     0,    15], device='cuda:0',
+       dtype=torch.int16)
+after: tensor([  256,  7936,   255,  4111,     0, -3600,     0, -4096,     0,  3840,
+           16,   225, -4096,  3584,     0,    15], device='cuda:0',
+       dtype=torch.int16)
+       '''
 
                     # cpoy to gpu_cache
                     # quantized_tensor = torch.tensor(quantized_tensor).cuda()
