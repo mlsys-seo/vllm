@@ -421,8 +421,58 @@ class Worker:
 
             
             # cpoy to gpu_cache
-            # self.gpu_cache[layer][kv][target_idx] = quantized_tensor
+            self.gpu_cache[layer][kv][target_idx] = quantized_tensor.view(dtype=torch.float16)
             
+            '''
+            # TEST
+            if layer == 6:
+                target_list_q = quantized_tensor[5][3]
+                target_list_c = self.gpu_cache[layer][kv][target_idx][5][3].view(dtype=torch.int16)
+                for i in range(len(target_list_q)):
+                    print(i)
+                    print(bin(target_list_q[i]))
+                    print(bin(target_list_c[i]))
+                    print()
+            
+                input()
+                
+            0
+            0b111100000000
+            0b111100000000
+
+            1
+            -0b10000000000000
+            -0b10000000000000
+
+            2
+            0b0
+            0b0
+
+            3
+            0b111100000000
+            0b111100000000
+
+            4
+            -0b10000000000000
+            -0b10000000000000
+
+            5
+            0b0
+            0b0
+
+            6
+            0b0
+            0b0
+
+            7
+            0b0
+            0b0
+
+            8
+            0b0
+            0b0
+            '''
+                
             # update scale list
         return scale
 
