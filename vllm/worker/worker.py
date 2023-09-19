@@ -379,9 +379,23 @@ after: tensor([  256,  7936,   255,  4111,     0, -3600,     0, -4096,     0,  3
        '''
 
                     # cpoy to gpu_cache
-                    # quantized_tensor = torch.tensor(quantized_tensor).cuda()
                     # self.gpu_cache[layer][kv][target_idx] = quantized_tensor
-                    # print(self.gpu_cache[layer][kv][target_idx][5][4])
+'''
+                    print(self.gpu_cache[layer][kv][target_idx][0])
+tensor([[ 0.0000e+00,  0.0000e+00,  0.0000e+00,  ...,  0.0000e+00,
+          0.0000e+00,  0.0000e+00],
+        [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  ...,  4.0960e+03,
+          0.0000e+00,  0.0000e+00],
+        [ 0.0000e+00, -4.0960e+03,  0.0000e+00,  ...,  0.0000e+00,
+          0.0000e+00,  0.0000e+00],
+        ...,
+        [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  ..., -4.0960e+03,
+          0.0000e+00, -4.0960e+03],
+        [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  ...,  0.0000e+00,
+          0.0000e+00,  0.0000e+00],
+        [ 0.0000e+00,  0.0000e+00,  1.0000e+00,  ...,  0.0000e+00,
+          0.0000e+00,  0.0000e+00]], device='cuda:0', dtype=torch.float16)
+'''
                     
                     # update scale list
                     
