@@ -306,44 +306,75 @@ class Worker:
                 == 2:
                 
                 # start
-                cpu_block_tables = input_metadata.block_tables.cpu().numpy()[0]
-                target_idx = cpu_block_tables[len(input_metadata.quantized)]
+                # TODO: ALL Prompt
+                # block_tables List[List] peomprr 수개수ㅋ만 큼 ㄷ있ㄷ
+                block_table_0 = input_metadata.block_tables[0]
+                # quantized -> scale ㄱ변ㄱ 저예저
+                target_idx = block_table_0[len(input_metadata.quantized)]
 
+                # TODO: k 
                 kv = 1
                 for layer in range(len(self.gpu_cache)):
                     target_tensor = self.gpu_cache[layer][kv][target_idx]
-                    # num_headas, num_elements, num_tokens_in_block
+                    # num_heads, num_elements, num_tokens
                     
                     TARGET_BIT = 4
                     n = 2 ** (TARGET_BIT - 1)
                     
-                    scale = max(target_tensor.max().abs(), target_tensor.min().abs())
+                    scale = torch.max(target_tensor.max().abs(), target_tensor.min().abs())
                     scale = torch.clamp(scale, min=1e-8) / n
                     zero_point = torch.tensor(0.0).to(scale.device)
-                    
-                    scale = scale.cpu().numpy()
-                    zero_point = zero_point.cpu().numpy()
 
-                    quantized_tensor = target_tensor.clone().cpu().numpy()
-                    quantized_tensor = (quantized_tensor / scale + zero_point).round().astype(np.int16)
-                   
-                    for head_idx in range(len(quantized_tensor)):
-                        for elem_idx in range(len(quantized_tensor[head_idx])):
-                            for i in range(0, len(quantized_tensor[head_idx][elem_idx]) - 1, 4): # 0 4 8 12
-                                bit_sum = 0
-                                for j in range(3):
-                                    bit_sum += quantized_tensor[head_idx][elem_idx][i+j] << 4 * (3-j)
-                                quantized_tensor[head_idx][elem_idx][i] = bit_sum
-                                    
-                            
+                    quantized_tensor = target_tensor.clone()
+                    # rounding_mode ㅇ확ㅇ
+                    quantized_tensor = quantized_tensor.div_(scale, rounding_mode="trunc")
+                    quantized_tensor = quantized_tensor.type(torch.int16)
+                    
+                    
+                    # packing
+                    and_val = torch.tensor(0xf, dtype=torch.int16).to(quantized_tensor.device)
+                    quantized_tensor = torch.bitwise_and(quantized_tensor, and_val)
+                    
+                    num_heads = len(quantized_tensor)
+                    head_size = len(quantized_tensor[0]) # num_elems
+                    block_size = len(quantized_tensor[0][0])
+                    head_stride = block_size * head_size
+                    elem_stride = block_size
+                    
+                    read_idx = 0
+                    end_idx = num_heads * head_size * block_size
+                                  
+                    while read_idx < end_idx:
+                        # read_idx: 1 씩 증가
+                        # write_idx = read_idx // (size_of(dtype) / TARGET_BIT)
+                        write_idx = read_idx // 4
+                        write_offset = read_idx % 4
+                        
+                        # read
+                        read_head_idx = read_idx // head_stride
+                        read_elem_idx = (read_idx % head_stride) // elem_stride
+                        read_token_idx = (read_idx % head_stride) % elem_stride
+            
+                        write_head_idx = write_idx // head_stride
+                        write_elem_idx = (write_idx % head_stride) // elem_stride
+                        write_token_idx = (write_idx % head_stride) % elem_stride
+                        
+                        # deep copy
+                        read = quantized_tensor[read_head_idx][read_elem_idx][read_token_idx]
+                        read <<= 4 * (3 - write_offset)
+
+                        # 이미 앞에서 << 해서  다 0 된                       
+                        quantized_tensor[write_head_idx][write_elem_idx][write_token_idx] |= read
+                       
+                        read_idx += 1
+                    
+                    if layer == 2:
+                        print(f"after: {quantized_tensor[0][1]}")
 
                     # cpoy to gpu_cache
                     # quantized_tensor = torch.tensor(quantized_tensor).cuda()
                     # self.gpu_cache[layer][kv][target_idx] = quantized_tensor
                     # print(self.gpu_cache[layer][kv][target_idx][5][4])
-                    
-                    # copy to gpu_cache
-                    
                     
                     # update scale list
                     
