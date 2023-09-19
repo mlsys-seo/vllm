@@ -254,68 +254,7 @@ class Worker:
             block_tables=block_tables_tensor,
         )
         return tokens_tensor, positions_tensor, input_metadata
-    '''
-    def _quantize(
-        self,
-        target_idx: int,
-    )-> torch.tensor:
-        # TODO: k 
-        kv = 1 # v=1
-        for layer in range(len(self.gpu_cache)):
-            # target_tensor: 1 physical block
-            target_tensor = self.gpu_cache[layer][kv][target_idx]
-            # num_kv_heads, HEAD_SIZE, BLOCJ_SIZE
-            # num_heads, num_elements, num_tokens
-            
-            TARGET_BIT = 4
-            n = 2 ** (TARGET_BIT - 1)
-            
-            scale = torch.max(target_tensor.max().abs(), target_tensor.min().abs())
-            scale = torch.clamp(scale, min=1e-8) / n
-            # zero_point = torch.tensor(0.0).to(scale.device)
 
-            quantized_tensor = target_tensor.clone()
-            
-            # TODO: rounding_mode 확인
-            quantized_tensor = quantized_tensor.div_(scale, rounding_mode="trunc")
-            quantized_tensor.type(torch.int16)
-            
-            # TEST
-            a = input(f"quantized_tensor typr : {quantized_tensor}")
-            if a == "w":
-                exit()
-                
-            quantized_tensor,type(torch.float16)
-            input()
-            
-            # packing
-            and_val = torch.tensor(0xf, dtype=torch.int16).to(quantized_tensor.device)
-            quantized_tensor = torch.bitwise_and(quantized_tensor, and_val)
-            
-            num_heads = len(quantized_tensor)
-            num_elems = len(quantized_tensor[0]) # HEAD_SIZE
-            num_tokens = len(quantized_tensor[0][0]) # BLOCK_SIZE
-            
-            for head_idx in range(num_heads):
-                for elem_idx in range(num_elems):
-                    for token_idx in range(num_tokens):
-                        write_idx = token_idx // 4
-                        write_offset = token_idx % 4
-                        
-                        read = quantized_tensor[head_idx][elem_idx][token_idx]
-                        read <<= 4 * (3 - write_offset)
-
-                        if write_offset == 0:
-                            quantized_tensor[head_idx][elem_idx][write_idx] = torch.tensor(0, dtype=torch.int16, device=quantized_tensor.device)
-                        quantized_tensor[head_idx][elem_idx][write_idx] |= read
-
-
-            # cpoy to gpu_cache
-            # self.gpu_cache[layer][kv][target_idx] = quantized_tensor
-            
-            # update scale list
-        return scale
-'''
     @torch.inference_mode()
     def execute_model(
         self,
@@ -363,51 +302,164 @@ class Worker:
 
         if len(input_metadata.block_tables) > 0:
             # 첫 째 dim이 prompt
-            if len(input_metadata.block_tables[0]) - len(input_metadata.quantized) == 2: 
-                # block_tables List[List] prompt 개수만큼 있
-                # 현재는 1개의 prompt만쓴다
-                block_table_0 = input_metadata.block_tables[0]
-                # TODO: quantized -> scale
-                target_idx = block_table_0[len(input_metadata.quantized)]
+            if len(input_metadata.block_tables[0]) - len(input_metadata.quantized) \
+                == 2:
                 
-                # self._quantize(target_idx)              
-        
+                # start
+                # TODO: ALL Prompt
+                # block_tables List[List] peomprr 수개수ㅋ만 큼 ㄷ있ㄷ
+                block_table_0 = input_metadata.block_tables[0]
+                # quantized -> scale ㄱ변ㄱ 저예저
+                target_idx = block_table_0[len(input_metadata.quantized)]
+
+                self._quantize(target_idx)
+ 
         return output
 
-    def _init_distributed_environment(
-        parallel_config: ParallelConfig,
-        rank: int,
-        distributed_init_method: Optional[str] = None,
-    ) -> None:
-        """Initialize the distributed environment."""
-        if torch.distributed.is_initialized():
-            torch_world_size = torch.distributed.get_world_size()
-            if torch_world_size != parallel_config.world_size:
-                raise RuntimeError(
-                    "torch.distributed is already initialized but the torch world "
-                    "size does not match parallel_config.world_size "
-                    f"({torch_world_size} vs. {parallel_config.world_size}).")
-        elif not distributed_init_method:
-            raise ValueError(
-                "distributed_init_method must be set if torch.distributed "
-                "is not already initialized")
-        else:
-            torch.distributed.init_process_group(
-                backend="nccl",
-                world_size=parallel_config.world_size,
-                rank=rank,
-                init_method=distributed_init_method,
-            )
+    def _quantize(
+        self,
+        target_idx: int,
+    )-> torch.tensor:
+        # TODO: k 
+        kv = 1 # v=1
+        for layer in range(len(self.gpu_cache)):         
+            # target_tensor: 1 physical block
+            target_tensor = self.gpu_cache[layer][kv][target_idx]
+            # num_kv_heads, HEAD_SIZE, BLOCJ_SIZE
+            # num_heads, num_elements, num_tokens
+            
+            TARGET_BIT = 4
+            n = 2 ** (TARGET_BIT - 1)
+            
+            scale = torch.max(target_tensor.max().abs(), target_tensor.min().abs())
+            scale = torch.clamp(scale, min=1e-8) / n
+            # zero_point = torch.tensor(0.0).to(scale.device)
+            quantized_tensor = target_tensor.clone()
+            
+            # TODO: rounding_mode 확인
+            quantized_tensor.div_(scale, rounding_mode="trunc")
+            quantized_tensor = quantized_tensor.type(torch.int16)
+            
+            # quant dequnt test
+            '''
+            # TEST
+            quantized_tensor = quantized_tensor.type(torch.float16)
+            quantized_tensor.mul_(scale)
+        
+            print(f"scale: {scale}")
+            print(target_tensor[1][2])
+            print(quantized_tensor[1][2])
+            
+            >>> a
+            [-0.0715, -0.1412, 0.0081, -0.2654, -0.0616, 0.0281, -0.1429, 0.0033, -0.283, -0.2241, 0.0311, -0.2737, -0.2747, 0.0388, -0.1098, 0.0626]
+            >>> e
+            [0.0, 0.0, 0.0, -0.17236328125, 0.0, 0.0, 0.0, 0.0, -0.17236328125, -0.17236328125, 0.0, -0.17236328125, -0.17236328125, 0.0, 0.0, 0.0]
+            # python 에서 같은 연산 똑같이 해봄
+            '''
+            
+            # bit mask test
+            '''
+            #TEST
+            before = quantized_tensor.clone()
+            
+            # packing
+            and_val = torch.tensor(0xf, dtype=torch.int16).to(quantized_tensor.device)
+            quantized_tensor = torch.bitwise_and(quantized_tensor, and_val)
+            
+            if layer == 4:
+                # TEST
+                before_list = before[2][4]
+                after_list = quantized_tensor[2][4]
+                
+                import pdb; pdb.set_trace()
+                
+            (Pdb) p before_list
+            tensor([ 0,  0,  0,  0, -1,  1,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0],
+                device='cuda:0', dtype=torch.int16)
+            (Pdb) p after_list
+            tensor([ 0,  0,  0,  0, 15,  1,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0],
+                device='cuda:0', dtype=torch.int16)
+            '''
+                            
+            # packing
+            and_val = torch.tensor(0xf, dtype=torch.int16).to(quantized_tensor.device)
+            quantized_tensor = torch.bitwise_and(quantized_tensor, and_val)
+            
+            num_heads = len(quantized_tensor)
+            num_elems = len(quantized_tensor[0]) # HEAD_SIZE
+            num_tokens = len(quantized_tensor[0][0]) # BLOCK_SIZE
+            
+            for head_idx in range(num_heads):
+                for elem_idx in range(num_elems):
+                    for token_idx in range(num_tokens):
+                        write_idx = token_idx // 4
+                        write_offset = token_idx % 4
+                        
+                        read = quantized_tensor[head_idx][elem_idx][token_idx]
+                        read <<= 4 * (3 - write_offset)
+                        if write_offset == 0:
+                            quantized_tensor[head_idx][elem_idx][write_idx] = torch.tensor(0, dtype=torch.int16, device=quantized_tensor.device)
+                        quantized_tensor[head_idx][elem_idx][write_idx] |= read
+                        
+            '''
+            if layer == 5:
+                a = 0
+                for i in before[2][3]:
+                    if (a==4):
+                        break
+                    print(f"{a}: {bin(i)}")
+                    a += 1
+                print(bin(quantized_tensor[2][3][0]))
+                input()
+                
+            0: 0b0
+            1: 0b1
+            2: 0b10
+            3: 0b0
+            0b 1 0010 0000
+            '''
 
-        # A small all_reduce for warmup.
-        torch.distributed.all_reduce(torch.zeros(1).cuda())
-        initialize_model_parallel(parallel_config.tensor_parallel_size,
-                                parallel_config.pipeline_parallel_size)
+            
+            # cpoy to gpu_cache
+            # self.gpu_cache[layer][kv][target_idx] = quantized_tensor
+            
+            # update scale list
+        return scale
+
+def _init_distributed_environment(
+    parallel_config: ParallelConfig,
+    rank: int,
+    distributed_init_method: Optional[str] = None,
+) -> None:
+    """Initialize the distributed environment."""
+    if torch.distributed.is_initialized():
+        torch_world_size = torch.distributed.get_world_size()
+        if torch_world_size != parallel_config.world_size:
+            raise RuntimeError(
+                "torch.distributed is already initialized but the torch world "
+                "size does not match parallel_config.world_size "
+                f"({torch_world_size} vs. {parallel_config.world_size}).")
+    elif not distributed_init_method:
+        raise ValueError(
+            "distributed_init_method must be set if torch.distributed "
+            "is not already initialized")
+    else:
+        torch.distributed.init_process_group(
+            backend="nccl",
+            world_size=parallel_config.world_size,
+            rank=rank,
+            init_method=distributed_init_method,
+        )
+
+    # A small all_reduce for warmup.
+    torch.distributed.all_reduce(torch.zeros(1).cuda())
+    initialize_model_parallel(parallel_config.tensor_parallel_size,
+                              parallel_config.pipeline_parallel_size)
 
 
-    def _pad_to_alignment(x: List[int], multiple_of: int) -> List[int]:
-        return x + [0] * ((-len(x)) % multiple_of)
+def _pad_to_alignment(x: List[int], multiple_of: int) -> List[int]:
+    return x + [0] * ((-len(x)) % multiple_of)
 
 
-    def _pad_to_max(x: List[int], max_len: int) -> List[int]:
-        return x + [0] * (max_len - len(x))
+def _pad_to_max(x: List[int], max_len: int) -> List[int]:
+    return x + [0] * (max_len - len(x))
