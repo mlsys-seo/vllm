@@ -66,3 +66,14 @@ class PhysicalTokenBlock:
         return (f'PhysicalTokenBlock(device={self.device}, '
                 f'block_number={self.block_number}, '
                 f'ref_count={self.ref_count})')
+
+
+class PhysicalQuantizedTokenBlock(PhysicalTokenBlock):
+    def __init__(
+        self,
+        device: Device,
+        block_number: int,
+        block_size: int,
+    ) -> None:
+        super().__init__(self, device, block_number, block_size)
+        
