@@ -320,43 +320,54 @@ class Worker:
         self,
         target_blocks: List[int],
         wirte_block: int,
-    )-> List[float]:
-        # TODO: k 
-        kv = 1 # v=1
+    ) -> List[float]:
+        # TODO: k
+        kv = 1  # v=1
         TARGET_BIT = 4
-        n = 2 ** (TARGET_BIT - 1)
-        
+
         for layer in range(len(self.gpu_cache)):
             quantized_tensor = self.gpu_cache[layer][kv][wirte_block]
             quantized_tensor = quantized_tensor.type(torch.int16)
             quantized_tensor = torch.bitwise_and(quantized_tensor, 0)
 
-            target_tensor = torch.stack([self.gpu_cache[layer][kv][block_num] for block_num in target_blocks], dim=0)
-            # num_kv_heads, HEAD_SIZE, BLOCK_SIZE
-            # num_heads, num_elements, num_tokens
-            
-            scale = torch.clamp(target_tensor.abs().max(dim=-1).values, min=1e-8) / n
-            
-            target_tensor = (target_tensor / scale.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)).to(torch.int16)
-            
-            # packing
-            and_val = torch.tensor(0xf, dtype=torch.int16).to(target_tensor.device)
-            target_tensor = torch.bitwise_and(target_tensor, and_val)
-            
-            # num_block = 4 (334line)
-            num_blocks, num_heads, num_elems, num_tokens = target_tensor.shape
-            
-            write_indices = (num_tokens // 4) * torch.arange(num_blocks).unsqueeze(-1).to(target_tensor.device)
-            write_offsets = torch.arange(num_tokens).unsqueeze(0).unsqueeze(0).to(target_tensor.device) % 4
+            # target_tensors: num_blocks, num_kv_heads, HEAD_SIZE, BLOCK_SIZE
+            target_tensors = [self.gpu_cache[layer][kv][block_num] for block_num in target_blocks]
 
-            reads = quantized_tensor[:, :, :, :].unsqueeze(-1) << (4 * (3 - write_offsets))
-            quantized_tensor[:, :, :, write_indices] |= reads
-           
+            # 각 블록에 대한 스케일을 계산
+            scales = [self._get_scale(target_block, TARGET_BIT) for target_block in target_tensors]
+            
+            num_heads, num_elems, num_tokens = target_tensors[0].shape
+            
+            for i in range(len(target_tensors)):
+                target_tensor = (target_tensors[i] / scales[i].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)).to(torch.int16)
+
+                # packing
+                and_val = torch.tensor(0xf, dtype=torch.int16).to(target_tensor.device)
+                target_tensor = torch.bitwise_and(target_tensor, and_val)
+                             
+                for i in range(num_tokens):
+                    write_offsets = i.to(target_tensor.device) % 4
+                    reads = target_tensor[:,:,i] << (4 * (3 - write_offsets))
+                
+                write_indices = (torch.arange(num_tokens) // 4 + (num_tokens // 4) * i).to(target_tensor.device)
+                
+                quantized_tensor[:,:,write_indices] |= reads
+
+                import pdb; pdb.set_trace()
+                a=2
+            
+            # quantized_tensor[:, :, write_indices] |= reads
+
             quantized_tensor = quantized_tensor.view(torch.float16)
-            
+
             # update scale list
-            
-            return 1.0
+
+        return 1.0
+
+    def _get_scale(self, target_block, target_bit):
+        n = 2 ** (target_bit - 1)
+        scale = torch.clamp(target_block.abs().max(), min=1e-8) / n
+        return scale
 
 
 def _init_distributed_environment(
