@@ -341,17 +341,14 @@ class Worker:
                 
                 target_tensor = (target_tensor / scale).to(torch.int16) & 0xf
                 
-                # packing                                            
-                for head_idx in range(num_heads):
-                    for elem_idx in range(num_elems):
-                        for token_idx in range(num_tokens):
-                            write_idx = (num_tokens // 4) * block_num
-                            write_offset = token_idx % 4
-                            
-                            read = target_tensor[head_idx][elem_idx][token_idx]
-                            read <<= 4 * (3 - write_offset)
-                            
-                            quantized_tensor[head_idx][elem_idx][write_idx] |= read
+                # packing
+                write_offset = torch.arange(16) // 4
+                target_tensor <<= 4 * (3 - write_offset)
+
+                for token_idx in range(num_tokens):
+                    write_idx = (num_tokens // 4) * block_num + token_idx // 4
+                    
+                    quantized_tensor[:][:][write_idx] |= target_tensor[:][:][token_idx]
 
                 quantized_tensor = quantized_tensor.view(torch.float16)
                 
