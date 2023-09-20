@@ -308,7 +308,7 @@ class Worker:
                 # 현재 test는 1개의 prompt만쓴다
                 block_table_0 = input_metadata.block_tables[0]
                 # TODO: quantized -> scale
-                end=len(input_metadata.quantized)
+                end=4 # test value
                 # TODO: 수정해야해
                 target_idx = block_table_0[end-4:end]
                 
@@ -323,52 +323,40 @@ class Worker:
     )-> List[float]:
         # TODO: k 
         kv = 1 # v=1
+        TARGET_BIT = 4
+        n = 2 ** (TARGET_BIT - 1)
+        
         for layer in range(len(self.gpu_cache)):
             quantized_tensor = self.gpu_cache[layer][kv][wirte_block]
             quantized_tensor = quantized_tensor.type(torch.int16)
             quantized_tensor = torch.bitwise_and(quantized_tensor, 0)
-            
-            for block_num in range(len(target_blocks)):
-                # target_tensor: 1 physical block
-                target_tensor = self.gpu_cache[layer][kv][target_blocks[block_num]]
-                # num_kv_heads, HEAD_SIZE, BLOCK_SIZE
-                # num_heads, num_elements, num_tokens
-                
-                TARGET_BIT = 4
-                n = 2 ** (TARGET_BIT - 1)
-                
-                scale = torch.max(target_tensor.max().abs(), target_tensor.min().abs())
-                scale = torch.clamp(scale, min=1e-8) / n
-                # zero_point = torch.tensor(0.0).to(scale.device)
-                
-                # TODO: rounding_mode 확인
-                target_tensor = target_tensor.div_(scale, rounding_mode="trunc")
-                target_tensor = target_tensor.type(torch.int16)
-                
-                # packing
-                and_val = torch.tensor(0xf, dtype=torch.int16).to(target_tensor.device)
-                target_tensor = torch.bitwise_and(target_tensor, and_val)
-                
-                num_heads = len(target_tensor)
-                num_elems = len(target_tensor[0]) # HEAD_SIZE
-                num_tokens = len(target_tensor[0][0]) # BLOCK_SIZE
-                             
-                for head_idx in range(num_heads):
-                    for elem_idx in range(num_elems):
-                        for token_idx in range(num_tokens):
-                            write_idx = (num_tokens // 4) * block_num
-                            write_offset = token_idx % 4
-                            
-                            read = quantized_tensor[head_idx][elem_idx][token_idx]
-                            read <<= 4 * (3 - write_offset)
-                            
-                            quantized_tensor[head_idx][elem_idx][write_idx] |= read
 
-                quantized_tensor = quantized_tensor.view(torch.float16)
-                
-                # update scale list
+            target_tensor = torch.stack([self.gpu_cache[layer][kv][block_num] for block_num in target_blocks], dim=0)
+            # num_kv_heads, HEAD_SIZE, BLOCK_SIZE
+            # num_heads, num_elements, num_tokens
             
-            return 0
+            scale = torch.clamp(target_tensor.abs().max(dim=-1).values, min=1e-8) / n
+            
+            target_tensor = (target_tensor / scale.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)).to(torch.int16)
+            
+            # packing
+            and_val = torch.tensor(0xf, dtype=torch.int16).to(target_tensor.device)
+            target_tensor = torch.bitwise_and(target_tensor, and_val)
+            
+            # num_block = 4 (334line)
+            num_blocks, num_heads, num_elems, num_tokens = target_tensor.shape
+            
+            write_indices = (num_tokens // 4) * torch.arange(num_blocks).unsqueeze(-1).to(target_tensor.device)
+            write_offsets = torch.arange(num_tokens).unsqueeze(0).unsqueeze(0).to(target_tensor.device) % 4
+
+            reads = quantized_tensor[:, :, :, :].unsqueeze(-1) << (4 * (3 - write_offsets))
+            quantized_tensor[:, :, :, write_indices] |= reads
+           
+            quantized_tensor = quantized_tensor.view(torch.float16)
+            
+            # update scale list
+            
+            return 1.0
 
 
 def _init_distributed_environment(
