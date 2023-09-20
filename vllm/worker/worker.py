@@ -364,8 +364,6 @@ class Worker:
                             
                             quantized_tensor[head_idx][elem_idx][write_idx] |= read
 
-
-                # cpoy to gpu_cache
                 quantized_tensor = quantized_tensor.view(torch.float16)
                 
                 # update scale list
