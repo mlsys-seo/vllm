@@ -303,73 +303,74 @@ class Worker:
         if len(input_metadata.block_tables) > 0:
             # 첫 째 dim이 prompt
             if len(input_metadata.block_tables[0]) - len(input_metadata.quantized) \
-                == 2: 
+                == 5: 
                 # block_tables List[List] prompt 개수만큼 있
-                # 현재는 1개의 prompt만쓴다
+                # 현재 test는 1개의 prompt만쓴다
                 block_table_0 = input_metadata.block_tables[0]
                 # TODO: quantized -> scale
-                target_idx = block_table_0[len(input_metadata.quantized)]
+                end=len(input_metadata.quantized)
+                # TODO: 수정해야해
+                target_idx = block_table_0[end-4:end]
                 
-                self._quantize(target_idx, 0)
+                self._quantize(target_idx, 1)
                             
-
-                                
-        
         return output
     
     def _quantize(
         self,
-        target_idx: int,
-        wirte_idx: int,
-    ):
+        target_blocks: List[int],
+        wirte_block: int,
+    )-> List[float]:
         # TODO: k 
         kv = 1 # v=1
         for layer in range(len(self.gpu_cache)):
-            # target_tensor: 1 physical block
-            target_tensor = self.gpu_cache[layer][kv][target_idx]
-            # num_kv_heads, HEAD_SIZE, BLOCJ_SIZE
-            # num_heads, num_elements, num_tokens
-            
-            TARGET_BIT = 4
-            n = 2 ** (TARGET_BIT - 1)
-            
-            scale = torch.max(target_tensor.max().abs(), target_tensor.min().abs())
-            scale = torch.clamp(scale, min=1e-8) / n
-            # zero_point = torch.tensor(0.0).to(scale.device)
-
-            quantized_tensor = target_tensor.clone()
-            
-            # TODO: rounding_mode 확인
-            quantized_tensor = quantized_tensor.div_(scale, rounding_mode="trunc")
+            quantized_tensor = self.gpu_cache[layer][kv][wirte_block]
             quantized_tensor = quantized_tensor.type(torch.int16)
+            quantized_tensor = torch.bitwise_and(quantized_tensor, 0)
             
-            # packing
-            and_val = torch.tensor(0xf, dtype=torch.int16).to(quantized_tensor.device)
-            quantized_tensor = torch.bitwise_and(quantized_tensor, and_val)
-            
-            num_heads = len(quantized_tensor)
-            num_elems = len(quantized_tensor[0]) # HEAD_SIZE
-            num_tokens = len(quantized_tensor[0][0]) # BLOCK_SIZE
-            
-            for head_idx in range(num_heads):
-                for elem_idx in range(num_elems):
-                    for token_idx in range(num_tokens):
-                        write_idx = token_idx // 4
-                        write_offset = token_idx % 4
-                        
-                        read = quantized_tensor[head_idx][elem_idx][token_idx]
-                        read <<= 4 * (3 - write_offset)
+            for block_num in range(len(target_blocks)):
+                # target_tensor: 1 physical block
+                target_tensor = self.gpu_cache[layer][kv][target_blocks[block_num]]
+                # num_kv_heads, HEAD_SIZE, BLOCK_SIZE
+                # num_heads, num_elements, num_tokens
+                
+                TARGET_BIT = 4
+                n = 2 ** (TARGET_BIT - 1)
+                
+                scale = torch.max(target_tensor.max().abs(), target_tensor.min().abs())
+                scale = torch.clamp(scale, min=1e-8) / n
+                # zero_point = torch.tensor(0.0).to(scale.device)
+                
+                # TODO: rounding_mode 확인
+                target_tensor = target_tensor.div_(scale, rounding_mode="trunc")
+                target_tensor = target_tensor.type(torch.int16)
+                
+                # packing
+                and_val = torch.tensor(0xf, dtype=torch.int16).to(target_tensor.device)
+                target_tensor = torch.bitwise_and(target_tensor, and_val)
+                
+                num_heads = len(target_tensor)
+                num_elems = len(target_tensor[0]) # HEAD_SIZE
+                num_tokens = len(target_tensor[0][0]) # BLOCK_SIZE
+                             
+                for head_idx in range(num_heads):
+                    for elem_idx in range(num_elems):
+                        for token_idx in range(num_tokens):
+                            write_idx = (num_tokens // 4) * block_num
+                            write_offset = token_idx % 4
+                            
+                            read = quantized_tensor[head_idx][elem_idx][token_idx]
+                            read <<= 4 * (3 - write_offset)
+                            
+                            quantized_tensor[head_idx][elem_idx][write_idx] |= read
 
-                        if write_offset == 0:
-                            quantized_tensor[head_idx][elem_idx][write_idx] = torch.tensor(0, dtype=torch.int16, device=quantized_tensor.device)
-                        quantized_tensor[head_idx][elem_idx][write_idx] |= read
 
-
-            # cpoy to gpu_cache
-            # self.gpu_cache[layer][kv][target_idx] = quantized_tensor.view(dtype=torch.float16)
+                # cpoy to gpu_cache
+                quantized_tensor = quantized_tensor.view(torch.float16)
+                
+                # update scale list
             
-            # update scale list
-        pass
+            return 0
 
 
 def _init_distributed_environment(
