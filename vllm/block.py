@@ -46,7 +46,7 @@ class LogicalTokenBlock:
         assert self.num_tokens > 0
         return self.token_ids[self.num_tokens - 1]
 
-
+# this
 class PhysicalTokenBlock:
     """Represents the state of a block in the KV cache."""
 

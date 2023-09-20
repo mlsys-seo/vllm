@@ -315,6 +315,8 @@ class SequenceGroupMetadata:
         self.seq_data = seq_data
         self.sampling_params = sampling_params
         self.block_tables = block_tables
+        
+        # self.
 
 
 class SequenceOutputs:

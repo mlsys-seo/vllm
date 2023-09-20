@@ -49,7 +49,7 @@ class BlockAllocator:
     def get_num_free_blocks(self) -> int:
         return len(self.free_blocks)
 
-
+# this
 # Mapping: logical block number -> physical block.
 BlockTable = List[PhysicalTokenBlock]
 
@@ -243,6 +243,7 @@ class BlockSpaceManager:
             self._free_block_table(block_table)
         self.block_tables.clear()
 
+# this
     def get_block_table(self, seq: Sequence) -> List[int]:
         block_table = self.block_tables[seq.seq_id]
         return [block.block_number for block in block_table]

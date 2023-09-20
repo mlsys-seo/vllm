@@ -310,7 +310,7 @@ class Worker:
                 # TODO: quantized -> scale
                 target_idx = block_table_0[len(input_metadata.quantized)]
                 
-                self._quantize(target_idx)
+                self._quantize(target_idx, 0)
                             
 
                                 
@@ -319,7 +319,8 @@ class Worker:
     
     def _quantize(
         self,
-        target_idx: int
+        target_idx: int,
+        wirte_idx: int,
     ):
         # TODO: k 
         kv = 1 # v=1
