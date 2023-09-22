@@ -321,8 +321,11 @@ class Worker:
         self,
         read_block_indices: List[int], # == 4
         write_block_idx: int,
-        target_bit = 4: int,
+        target_bit: int = 4,
     )-> torch.tensor:
+        
+        # how may read_blocks are in write_block
+        packing_ratio = len(read_block_indices) # 4
         
         # TODO: k 
         kv = 1 # v=1
@@ -341,18 +344,13 @@ class Worker:
             read_blocks = read_blocks.bitwise_and(torch.tensor(0x000f, dtype=torch.int16))
             
             # packing
-            # TODO: torch.arange(4) =>
-            # sizeof() / target
-            # read / write
-            # packing_ratio = 4
-            write_offset = torch.arange(4, dtype=torch.int16).repeat(num_tokens // 4).to(write_block.device)
+            write_offset = torch.arange(packing_ratio, dtype=torch.int16).repeat(num_tokens // packing_ratio).to(write_block.device)
             
-            # TODO: 
-            read_blocks = read_blocks.bitwise_left_shift(4 * (3-write_offset))
+            read_blocks = read_blocks.bitwise_left_shift(target_bit * (3 - write_offset))
 
             for block_idx in range(num_blocks):
                 for token_idx in range(num_tokens):
-                    write_idx = (num_tokens // 4) * block_idx + token_idx // 4
+                    write_idx = (num_tokens // packing_ratio) * block_idx + token_idx // packing_ratio
 
                     write_block[:,:,write_idx] = write_block[:,:,write_idx].bitwise_or(read_blocks[block_idx,:,:,token_idx])
 
@@ -361,6 +359,7 @@ class Worker:
             return scales
         
     def _get_scales(self, target_blocks, target_bit):
+        # TODO: k cache
         n = 2 ** (target_bit - 1)
         scales = torch.clamp(target_blocks.abs().amax((1,2,3), keepdim=True), min=1e-8) / n
         return scales
