@@ -302,16 +302,15 @@ class Worker:
 
         if len(input_metadata.block_tables) > 0:
             # 첫 째 dim이 prompt
-            if len(input_metadata.block_tables[0]) - len(input_metadata.quantized) \
-                == 5: 
+            if len(input_metadata.block_tables[0]) == 5: 
                 # block_tables List[List] prompt 개수만큼 있
                 # 현재 test는 1개의 prompt만쓴다
                 block_table_0 = input_metadata.block_tables[0]
                 # TODO: quantized -> scale
-                end=len(input_metadata.quantized)
+                end=len(block_table_0)
                 # TODO: 수정해야해
                 target_idx = block_table_0[end-4:end]
-                
+               
                 self._quantize(target_idx, 1)
                             
         return output
@@ -320,47 +319,45 @@ class Worker:
         self,
         read_block_indices: List[int],
         write_block_idx: int,
-    )-> List[float]:
-        
-        TARGET_BIT = 4
+        target_bit= 4: int,
+    )-> torch.tensor:
         
         # TODO: k 
         kv = 1 # v=1
         for layer in range(len(self.gpu_cache)):
-            write_block = self.gpu_cache[layer][kv][write_block].to(torch.int16)
-            write_block &= 0
+            self.gpu_cache[layer][kv][write_block_idx] = 0.0
+            write_block = self.gpu_cache[layer][kv][write_block_idx].view(torch.int16)
             
-            read_blocks = torch.tensor()
-            for read_block_index in read_block_indices:
-                read_blocks.stack(self.gpu_cache[layer][kv][read_block_indices[read_block_index]])
-                
-            num_blocks, num_heads, num_elems, num_tokens = target_tensor.shape
-            
-            scales = self._get_sclaes(read_blocks, TARGET_BIT)
-            read_blocks = (read_blocks / scale).to(torch.int16) & 0xf
+            read_blocks = self.gpu_cache[layer][kv][read_block_indices,]
                
+            num_blocks, num_heads, num_elems, num_tokens = read_blocks.shape
+            
+            scales = self._get_scales(read_blocks, target_bit)
+
+            read_blocks.div_(scales)
+            read_blocks = read_blocks.view(torch.int16)
+            read_blocks = read_blocks.bitwise_and(torch.tensor(0xf,dtype=torch.int16))
+            
             # packing
-            write_offset = torch.arange(16) // 4
-            target_tensor <<= 4 * (3 - write_offset)
+            # TODO: torch.arange(4) =>
+            write_offset = torch.arange(4, dtype=torch.int16).repeat(num_tokens // 4).to(write_block.device)
+            
+            read_blocks = read_blocks.bitwise_left_shift(4 * (3-write_offset))
 
-            for token_idx in range(num_tokens):
-                write_idx = (num_tokens // 4) * block_num + token_idx // 4
-                
-                quantized_tensor[:][:][write_idx] |= target_tensor[:][:][token_idx]
+            for block_idx in range(num_blocks):
+                for token_idx in range(num_tokens):
+                    write_idx = (num_tokens // 4) * block_idx + token_idx // 4
 
-            quantized_tensor = quantized_tensor.view(torch.float16)
+                    write_block[:,:,write_idx] = write_block[:,:,write_idx].bitwise_or(read_blocks[block_idx,:,:,token_idx])
+
+            write_block = write_block.view(torch.float16)
             
-            import pdb; pdb.set_trace()
-            a=1
-            
-            # update scale list
-            
-            return 1.0
+            return scales
         
     def _get_scales(self, target_blocks, target_bit):
         n = 2 ** (target_bit - 1)
-        scalew = torch.clamp(target_block.abs().amax((1,2,3)), min=1e-8) / n
-        return scalew
+        scales = torch.clamp(target_blocks.abs().amax((1,2,3), keepdim=True), min=1e-8) / n
+        return scales
 
 
 def _init_distributed_environment(
