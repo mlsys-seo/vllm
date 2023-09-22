@@ -318,8 +318,8 @@ class Worker:
     
     def _quantize(
         self,
-        target_blocks: List[int],
-        wirte_block: int,
+        read_block_indices: List[int],
+        write_block_idx: int,
     )-> List[float]:
         
         TARGET_BIT = 4
@@ -327,39 +327,40 @@ class Worker:
         # TODO: k 
         kv = 1 # v=1
         for layer in range(len(self.gpu_cache)):
-            quantized_tensor = self.gpu_cache[layer][kv][wirte_block].to(torch.int16)
-            quantized_tensor &= 0
+            write_block = self.gpu_cache[layer][kv][write_block].to(torch.int16)
+            write_block &= 0
             
-            for block_num in range(len(target_blocks)):
-                # target_tensor: 1 physical block
-                target_tensor = self.gpu_cache[layer][kv][target_blocks[block_num]]
-                # num_kv_heads, HEAD_SIZE, BLOCK_SIZE
-                # num_heads, num_elements, num_tokens
-                num_heads, num_elems, num_tokens = target_tensor.shape
+            read_blocks = torch.tensor()
+            for read_block_index in read_block_indices:
+                read_blocks.stack(self.gpu_cache[layer][kv][read_block_indices[read_block_index]])
                 
-                scale = self._get_scale(target_tensor, TARGET_BIT)
-                
-                target_tensor = (target_tensor / scale).to(torch.int16) & 0xf
-                
-                # packing
-                write_offset = torch.arange(16) // 4
-                target_tensor <<= 4 * (3 - write_offset)
+            num_blocks, num_heads, num_elems, num_tokens = target_tensor.shape
+            
+            scales = self._get_sclaes(read_blocks, TARGET_BIT)
+            read_blocks = (read_blocks / scale).to(torch.int16) & 0xf
+               
+            # packing
+            write_offset = torch.arange(16) // 4
+            target_tensor <<= 4 * (3 - write_offset)
 
-                for token_idx in range(num_tokens):
-                    write_idx = (num_tokens // 4) * block_num + token_idx // 4
-                    
-                    quantized_tensor[:][:][write_idx] |= target_tensor[:][:][token_idx]
-
-                quantized_tensor = quantized_tensor.view(torch.float16)
+            for token_idx in range(num_tokens):
+                write_idx = (num_tokens // 4) * block_num + token_idx // 4
                 
-                # update scale list
+                quantized_tensor[:][:][write_idx] |= target_tensor[:][:][token_idx]
+
+            quantized_tensor = quantized_tensor.view(torch.float16)
+            
+            import pdb; pdb.set_trace()
+            a=1
+            
+            # update scale list
             
             return 1.0
         
-    def _get_scale(self, target_block, target_bit):
+    def _get_scales(self, target_blocks, target_bit):
         n = 2 ** (target_bit - 1)
-        scale = torch.clamp(target_block.abs().max(), min=1e-8) / n
-        return scale
+        scalew = torch.clamp(target_block.abs().amax((1,2,3)), min=1e-8) / n
+        return scalew
 
 
 def _init_distributed_environment(
