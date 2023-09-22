@@ -315,11 +315,13 @@ class Worker:
                             
         return output
     
+    # TODO: TEST read indices 
+    # FIXME: assert block num == 4
     def _quantize(
         self,
-        read_block_indices: List[int],
+        read_block_indices: List[int], # == 4
         write_block_idx: int,
-        target_bit= 4: int,
+        target_bit = 4: int,
     )-> torch.tensor:
         
         # TODO: k 
@@ -336,12 +338,16 @@ class Worker:
 
             read_blocks.div_(scales)
             read_blocks = read_blocks.view(torch.int16)
-            read_blocks = read_blocks.bitwise_and(torch.tensor(0xf,dtype=torch.int16))
+            read_blocks = read_blocks.bitwise_and(torch.tensor(0x000f, dtype=torch.int16))
             
             # packing
             # TODO: torch.arange(4) =>
+            # sizeof() / target
+            # read / write
+            # packing_ratio = 4
             write_offset = torch.arange(4, dtype=torch.int16).repeat(num_tokens // 4).to(write_block.device)
             
+            # TODO: 
             read_blocks = read_blocks.bitwise_left_shift(4 * (3-write_offset))
 
             for block_idx in range(num_blocks):
