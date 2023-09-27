@@ -312,6 +312,7 @@ class Worker:
                 target_idx = block_table_0[end-4:end]
                
                 self._quantize(target_idx, 1)
+                self._quantize_k(target_idx, 1)
                             
         return output
     
@@ -358,10 +359,58 @@ class Worker:
             
             return scales
         
+    def _quantize_k(
+        self,
+        read_block_indices: List[int], # == 4
+        write_block_idx: int,
+        target_bit: int = 4,
+    )-> torch.tensor:
+        
+        # how may read_blocks are in write_block
+        packing_ratio = len(read_block_indices) # 4
+        
+        kv = 0 # k=0
+        for layer in range(len(self.gpu_cache)):
+            self.gpu_cache[layer][kv][write_block_idx] = 0.0
+            write_block = self.gpu_cache[layer][kv][write_block_idx].view(torch.int16)
+            
+            read_blocks = self.gpu_cache[layer][kv][read_block_indices,]
+               
+            num_blocks, num_heads, num_elems_x, num_tokens, x = read_blocks.shape
+                     
+            scales = self._get_scales_k(read_blocks, target_bit)
+
+            read_blocks.div_(scales)
+            read_blocks = read_blocks.view(torch.int16)
+            read_blocks = read_blocks.bitwise_and(torch.tensor(0x000f, dtype=torch.int16))
+            
+            # packing
+            # num_tokens -> x
+
+            write_offset = torch.arange(packing_ratio, dtype=torch.int16).unsqueeze(-1).repeat(num_tokens // packing_ratio ,x).to(write_block.device)
+            read_blocks = read_blocks.bitwise_left_shift(target_bit * (3 - write_offset))
+            
+            for block_idx in range(num_blocks):
+                for token_idx in range(num_tokens):
+                    write_idx = (num_tokens // packing_ratio) * block_idx + token_idx // packing_ratio
+
+                    write_block[:,:,write_idx,:] = write_block[:,:,write_idx,:].bitwise_or(read_blocks[block_idx,:,:,token_idx,:])
+
+            write_block = write_block.view(torch.float16)
+            
+            return scales
+
+        
     def _get_scales(self, target_blocks, target_bit):
         # TODO: k cache
         n = 2 ** (target_bit - 1)
         scales = torch.clamp(target_blocks.abs().amax((1,2,3), keepdim=True), min=1e-8) / n
+        return scales
+    
+    def _get_scales_k(self, target_blocks, target_bit):
+        # TODO: k cache
+        n = 2 ** (target_bit - 1)
+        scales = torch.clamp(target_blocks.abs().amax((1,2,3,4), keepdim=True), min=1e-8) / n
         return scales
 
 
